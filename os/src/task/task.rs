@@ -83,9 +83,34 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// Follow variable for implement the stride schedule algorithm
+    /// stride 
+    pub stride: usize,
+
+    /// priority
+    pub priority: usize,
 }
 
 impl TaskControlBlockInner {
+    /// set the process's stride
+    pub fn add_pass(&mut self, pass: usize) {
+        self.stride += pass;
+    }
+
+    /// get the process's stride
+    pub fn get_stride(&self) -> usize {
+        self.stride
+    }
+
+    /// set the process's priortiy 
+    pub fn set_priority(&mut self, prio: usize) {
+        self.priority = prio;
+    }
+    /// get the priority
+    pub fn get_priority(&self) -> usize {
+        self.priority
+    }
     /// get the TaskInfo for sys_taskinfo
     pub fn get_user_taskinfo(&self) -> (TaskStatus, usize, [u32; MAX_SYSCALL_NUM]) {
         (self.get_status(), self.get_time(), self.get_syscall_times())
@@ -164,6 +189,8 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    stride: 0,
+                    priority: 16,
                 })
             },
         };
@@ -247,6 +274,8 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    stride: 0, 
+                    priority: 16,
                 })
             },
         });
@@ -299,6 +328,8 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp, 
+                    stride: 0,
+                    priority: 16,
                 })
             },
         });
@@ -316,6 +347,29 @@ impl TaskControlBlock {
         task_control_block
     }
 
+    /// set priority of process
+    pub fn set_priority(&self, prio: usize) {
+        let mut inner = self.inner_exclusive_access();
+        inner.set_priority(prio);
+    }
+
+    /// get priority of proces
+    pub fn get_priority(&self) -> usize { 
+        self.inner_exclusive_access()
+            .get_priority()
+    }
+
+    /// add the pass to the process's stride
+    pub fn add_stride(&self, pass: usize) {
+        self.inner_exclusive_access()
+            .add_pass(pass);
+    }
+
+    /// get stride of process
+    pub fn get_stride(&self) -> usize {
+        self.inner_exclusive_access()
+            .get_stride()
+    }
 
     /// get pid of process
     pub fn getpid(&self) -> usize {
