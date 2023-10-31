@@ -33,8 +33,8 @@ pub use task::{TaskControlBlock, TaskStatus};
 pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 pub use manager::add_task;
 pub use processor::{
-    current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
-    Processor,
+    current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task, 
+    current_task_info, Processor, 
 };
 /// Suspend the current 'Running' task and run the next task in task list.
 pub fn suspend_current_and_run_next() {
@@ -44,6 +44,8 @@ pub fn suspend_current_and_run_next() {
     // ---- access current TCB exclusively
     let mut task_inner = task.inner_exclusive_access();
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
+    let scheduled_time = task_inner.task_time;
+    task_inner.task_time  = get_time_ms() - scheduled_time;
     // Change status to Ready
     task_inner.task_status = TaskStatus::Ready;
     drop(task_inner);
@@ -76,6 +78,10 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     let mut inner = task.inner_exclusive_access();
     // Change status to Zombie
     inner.task_status = TaskStatus::Zombie;
+    // Change time to ZERO
+    inner.task_time = 0;
+    // change syscall times 
+    inner.task_syscall_times = [0; MAX_SYSCALL_NUM];
     // Record exit code
     inner.exit_code = exit_code;
     // do not move to its parent but under initproc
