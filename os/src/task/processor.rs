@@ -8,7 +8,7 @@ use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
 use crate::config::MAX_SYSCALL_NUM;
-use crate::timer::get_time_ms;
+use crate::timer::get_time_us;
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
@@ -63,11 +63,8 @@ pub fn run_tasks() {
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
-            // let time = task_inner.task_time;
-            // if time == 0 {
-            task_inner.task_time = get_time_ms();
-            // } else
-            // release coming task_inner manually
+            // get current task of start time
+            task_inner.task_time = get_time_us() / 1000;
             drop(task_inner);
             // release coming task TCB manually
             processor.current = Some(task);

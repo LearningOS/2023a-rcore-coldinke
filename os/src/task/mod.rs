@@ -23,6 +23,8 @@ mod switch;
 mod task;
 
 use crate::fs::{open_file, OpenFlags};
+use crate::config::MAX_SYSCALL_NUM;
+use crate::timer::get_time_us;
 use alloc::sync::Arc;
 pub use context::TaskContext;
 use lazy_static::*;
@@ -45,7 +47,7 @@ pub fn suspend_current_and_run_next() {
     let mut task_inner = task.inner_exclusive_access();
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
     let scheduled_time = task_inner.task_time;
-    task_inner.task_time  = get_time_ms() - scheduled_time;
+    task_inner.task_time  = (get_time_us() / 1000) - scheduled_time;
     // Change status to Ready
     task_inner.task_status = TaskStatus::Ready;
     drop(task_inner);
