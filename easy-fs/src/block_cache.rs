@@ -53,6 +53,7 @@ impl BlockCache {
         unsafe { &mut *(addr as *mut T) }
     }
 
+    /// more easy useful interface
     pub fn read<T, V>(&self, offset: usize, f: impl FnOnce(&T) -> V) -> V {
         f(self.get_ref(offset))
     }

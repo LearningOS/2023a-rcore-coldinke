@@ -1,6 +1,7 @@
 use core::any::Any;
 /// Trait for block devices
 /// which reads and writes data in the unit of blocks
+/// Use the device to write and read the block device
 pub trait BlockDevice: Send + Sync + Any {
     ///Read data form block to buffer
     fn read_block(&self, block_id: usize, buf: &mut [u8]);

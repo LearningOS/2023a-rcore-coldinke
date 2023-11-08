@@ -124,6 +124,29 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     }
 }
 
+/// Link the new file to old file
+pub fn linkat(old_name: &str, new_name: &str) -> Option<()> {
+    if old_name.eq(new_name) {
+        return None;
+    }
+    // link old file to new file
+    if let Some(_) = ROOT_INODE.link_at(old_name, new_name) {
+        Some(())
+    } else {
+        None
+    }
+}
+
+/// Unlink the name of file
+pub fn unlinkat(name: &str) -> Option<()> {
+    // unlink file
+    if let Some(_) = ROOT_INODE.unlink_at(name) {
+        Some(())
+    } else {
+        None
+    }
+}
+
 impl File for OSInode {
     fn readable(&self) -> bool {
         self.readable
@@ -154,5 +177,16 @@ impl File for OSInode {
             total_write_size += write_size;
         }
         total_write_size
+    }
+    fn stat(&self, st: &mut super::Stat) -> usize {
+        let inner = self.inner.exclusive_access();
+        // st.ino = inner.inode as u64;
+        st.ino = 0;
+        st.mode = match inner.inode.is_dir() {
+            true => super::StatMode::DIR,
+            false => super::StatMode::FILE,
+        };
+        st.nlink = inner.inode.get_nlink();
+        0
     }
 }
