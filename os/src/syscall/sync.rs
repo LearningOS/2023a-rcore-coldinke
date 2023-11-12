@@ -1,7 +1,10 @@
 use crate::sync::{Condvar, Mutex, MutexBlocking, MutexSpin, Semaphore};
 use crate::task::{block_current_and_run_next, current_process, current_task};
 use crate::timer::{add_timer, get_time_ms};
-use alloc::sync::Arc;
+use alloc::{
+    sync::Arc,
+    vec::Vec,
+};
 /// sleep syscall
 pub fn sys_sleep(ms: usize) -> isize {
     trace!(
@@ -71,6 +74,9 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
+    if process_inner.deadlock_detect && mutex.is_locking() {
+        return -0xDEAD;
+    }
     drop(process_inner);
     drop(process);
     mutex.lock();
@@ -120,11 +126,28 @@ pub fn sys_semaphore_create(res_count: usize) -> isize {
         .map(|(id, _)| id)
     {
         process_inner.semaphore_list[id] = Some(Arc::new(Semaphore::new(res_count)));
+        process_inner.semaphore_available[id] = res_count;
+        for alloction in process_inner.semaphore_alloction.iter_mut() {
+            alloction[id] = 0;
+        }
+        for need in process_inner.semaphore_need.iter_mut() {
+            need[id] = 0;
+        }
         id
     } else {
         process_inner
             .semaphore_list
             .push(Some(Arc::new(Semaphore::new(res_count))));
+        // Init
+        process_inner
+            .semaphore_available
+            .push(res_count);
+        for alloction in process_inner.semaphore_alloction.iter_mut() {
+            alloction.push(0);
+        }
+        for need in process_inner.semaphore_need.iter_mut() {
+            need.push(0);
+        }
         process_inner.semaphore_list.len() - 1
     };
     id as isize
@@ -142,9 +165,19 @@ pub fn sys_semaphore_up(sem_id: usize) -> isize {
             .unwrap()
             .tid
     );
+    let tid = current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .unwrap()
+        .tid;
     let process = current_process();
-    let process_inner = process.inner_exclusive_access();
+    let mut process_inner = process.inner_exclusive_access();
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
+    // release the shared rescoures.
+    process_inner.semaphore_alloction[tid][sem_id] -= 1;
+    process_inner.semaphore_available[sem_id] += 1;
     drop(process_inner);
     sem.up();
     0
@@ -162,9 +195,70 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
             .unwrap()
             .tid
     );
+    let tid = current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .unwrap()
+        .tid;
     let process = current_process();
-    let process_inner = process.inner_exclusive_access();
+    let mut process_inner = process.inner_exclusive_access();
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
+    if process_inner.deadlock_detect {
+        let mut finish = Vec::new();
+        let task_num = process_inner.semaphore_need.len();
+        for _ in 0..task_num {
+            finish.push(false);
+        }
+        let mut work = process_inner.semaphore_available.clone();
+        
+        loop {
+            let mut modify = false;
+            for task_id in 0..task_num {
+                if finish[task_id] == false {
+                    let mut pass = false;
+                    for (sem_id, _) in work.iter().enumerate() {
+                        let worked = work[sem_id];
+                        let needed = process_inner.semaphore_need[task_id][sem_id];
+                        if needed < worked {
+                            pass = true;
+                            break;
+                        }
+                    }
+                    if pass {
+                        finish[task_id] = true;
+                        for (sem_id, work_ptr) in work.iter_mut().enumerate() {
+                            let allocation = process_inner.semaphore_alloction[task_id][sem_id];
+                            *work_ptr += allocation;
+                            modify = true;
+                        }
+                    }
+                }
+            }
+
+            if !modify {
+                break;
+            }
+        }
+
+        let mut safety = true;
+        for status in finish {
+            if status == false {
+                safety = false;
+                break;
+            }
+        }
+        if !safety {
+            // remove the current modify.
+            process_inner.semaphore_need[tid][sem_id] -= 1;
+            return -0xDEAD;
+        }
+    }
+    // store the current status
+    process_inner.semaphore_available[sem_id] -= 1;
+    process_inner.semaphore_need[tid][sem_id] -= 1;
+    process_inner.semaphore_alloction[tid][sem_id] += 1;
     drop(process_inner);
     sem.down();
     0
@@ -245,7 +339,18 @@ pub fn sys_condvar_wait(condvar_id: usize, mutex_id: usize) -> isize {
 /// enable deadlock detection syscall
 ///
 /// YOUR JOB: Implement deadlock detection, but might not all in this syscall
-pub fn sys_enable_deadlock_detect(_enabled: usize) -> isize {
-    trace!("kernel: sys_enable_deadlock_detect NOT IMPLEMENTED");
-    -1
+pub fn sys_enable_deadlock_detect(enabled: usize) -> isize {
+    trace!("kernel: sys_enable_deadlock_detect {}", enabled);
+    if enabled == 1 || enabled == 0 {
+        let process = current_process();
+        let mut process_inner = process.inner_exclusive_access();
+        process_inner.deadlock_detect = match enabled {
+            1 => true,
+            0 => false,
+            _ => panic!("Should not reach here."),
+        };
+        0
+    } else {
+        -1
+    }
 }

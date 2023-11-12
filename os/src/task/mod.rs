@@ -88,6 +88,14 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // it will be deallocated when sys_waittid is called
     drop(task_inner);
 
+    // clear the alloction and need
+    for alloction in process.inner_exclusive_access().semaphore_alloction[tid].iter_mut() {
+        *alloction = 0;
+    }
+    for need in process.inner_exclusive_access().semaphore_need[tid].iter_mut() {
+        *need = 0;
+    }
+
     // Move the task to stop-wait status, to avoid kernel stack from being freed
     if tid == 0 {
         add_stopping_task(task);
