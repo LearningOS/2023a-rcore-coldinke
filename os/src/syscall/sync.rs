@@ -195,53 +195,48 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
             .unwrap()
             .tid
     );
-    let tid = current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .res
-        .as_ref()
-        .unwrap()
-        .tid;
     let process = current_process();
     let mut process_inner = process.inner_exclusive_access();
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
+    let task_id = current_task().unwrap().inner_exclusive_access().res.as_ref().unwrap().tid;
+    process_inner.semaphore_need[task_id][sem_id] += 1;
     if process_inner.deadlock_detect {
+        // Check the status is safety?
         let mut finish = Vec::new();
-        let task_num = process_inner.semaphore_need.len();
-        for _ in 0..task_num {
+        let total_tasks = process_inner.semaphore_need.len();
+        for _ in 0..total_tasks {
             finish.push(false);
         }
         let mut work = process_inner.semaphore_available.clone();
-        
+
         loop {
-            let mut modify = false;
-            for task_id in 0..task_num {
-                if finish[task_id] == false {
-                    let mut pass = false;
-                    for (sem_id, _) in work.iter().enumerate() {
-                        let worked = work[sem_id];
-                        let needed = process_inner.semaphore_need[task_id][sem_id];
-                        if needed < worked {
-                            pass = true;
+            let mut update = false;
+            for task_index in 0..total_tasks {
+                // find the target, the finish[task_id] is false and the work[sem_id] equal or less the need[task_index][sem_index]
+                if finish[task_index] == false {
+                    let mut is_target = true;
+                    for (sem_index, _) in work.iter().enumerate() {
+                        if  process_inner.semaphore_need[task_index][sem_index] > work[sem_index] {
+                            is_target = false;
                             break;
                         }
-                    }
-                    if pass {
-                        finish[task_id] = true;
-                        for (sem_id, work_ptr) in work.iter_mut().enumerate() {
-                            let allocation = process_inner.semaphore_alloction[task_id][sem_id];
-                            *work_ptr += allocation;
-                            modify = true;
+                    } 
+                    if is_target {
+                        finish[task_index] = true;
+                        // update the status of allocation matrix
+                        for (sem_index, work_ptr) in work.iter_mut().enumerate() {
+                            *work_ptr += process_inner.semaphore_alloction[task_index][sem_index];
                         }
+                        update = true;
                     }
                 }
             }
 
-            if !modify {
+            if update == false {
+                // unmodify, So terminate the current loop
                 break;
             }
         }
-
         let mut safety = true;
         for status in finish {
             if status == false {
@@ -249,18 +244,18 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
                 break;
             }
         }
-        if !safety {
-            // remove the current modify.
-            process_inner.semaphore_need[tid][sem_id] -= 1;
+        if safety == false {
+            process_inner.semaphore_need[task_id][sem_id] -= 1;
             return -0xDEAD;
         }
-    }
-    // store the current status
-    process_inner.semaphore_available[sem_id] -= 1;
-    process_inner.semaphore_need[tid][sem_id] -= 1;
-    process_inner.semaphore_alloction[tid][sem_id] += 1;
+    }    
     drop(process_inner);
     sem.down();
+    let mut process_inner = process.inner_exclusive_access();
+    // store the current status
+    process_inner.semaphore_available[sem_id] -= 1;
+    process_inner.semaphore_need[task_id][sem_id] -= 1;
+    process_inner.semaphore_alloction[task_id][sem_id] += 1;
     0
 }
 /// condvar create syscall

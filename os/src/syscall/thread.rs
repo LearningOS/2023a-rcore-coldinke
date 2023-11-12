@@ -47,13 +47,13 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     // create the matrix for bank algorithm.
     process_inner.semaphore_need.push(Vec::new());
     if process_inner.semaphore_need.len() > 1 {
-        let len = process_inner.semaphore_need.first().unwrap().len();
-        for _ in 0..len {
+    let len = process_inner.semaphore_need.first().unwrap().len();
+    for _ in 0..len {
             process_inner
                 .semaphore_need
                 .last_mut()
-                .unwrap().
-                push(0);
+                .unwrap()
+                .push(0);
         }
     }
     process_inner.semaphore_alloction.push(Vec::new());
